@@ -247,6 +247,29 @@ footer{font-size:12px;color:var(--muted);max-width:90ch}
       </section>
     </div>
 
+    <section class="panel" id="pane-pick" aria-label="적용 덕트 직경 선택" style="margin-top:22px">
+      <div class="title-row">
+        <h2>적용할 덕트 직경</h2>
+        <span class="note">세 조건을 비교하고 하나를 골라 적용합니다</span>
+      </div>
+      <div class="group-row" id="row-pick"><span class="group-label">적용 조건</span></div>
+      <p class="note" id="pick-note"></p>
+      <div class="field" id="f-custom" hidden>
+        <label for="in-cD"><span>직접 선택한 덕트 직경</span><span class="sym">D</span></label>
+        <div class="inrow"><input id="in-cD" type="number" inputmode="decimal" min="0" step="any"><span class="unit">mm</span></div>
+        <span class="err" hidden>0보다 큰 숫자를 넣어 주세요.</span>
+        <div class="inrow" style="margin-top:4px"><select id="sel-cD" aria-label="상용 규격에서 선택"></select></div>
+      </div>
+      <div class="sizetable" style="max-height:none"><table id="pick-table"></table></div>
+      <p class="warn" id="pick-warn" hidden></p>
+      <div class="result" style="border-top-color:var(--mark)">
+        <div class="big"><span class="k">적용 덕트 직경</span><span class="v" id="pk-d">–</span></div>
+        <div class="big sub"><span class="k">적용 시 덕트속도</span><span class="v" id="pk-v">–</span></div>
+        <div class="big sub"><span class="k">최소 반송속도 대비</span><span class="v" id="pk-r">–</span></div>
+      </div>
+      <div class="steps" id="pick-steps"></div>
+    </section>
+
     <section class="panel" id="pane-size-table" aria-label="상용 덕트 규격표" style="margin-top:22px">
       <div class="title-row">
         <h2>상용 덕트 규격별 덕트속도</h2>
@@ -564,7 +587,7 @@ function compute(){
    ========================================================= */
 const STD_DUCTS = [["3/8",10],["1/2",15],["3/4",20],["1",25],["1¼",32],["1½",40],["2",50],["2½",65],["3",80],["3½",90],
   ["4",100],["5",125],["6",150],["8",200],["10",250],["12",300],["14",350],["16",400],["18",450],["20",500],["22",550],["24",600],["26",650],["30",750]];
-const duct = { tab:"hood", mode:"size", qSrc:"hood", qUnit:"min", qDirect:0.24, Vd:10, fD:200, vMode:"V", fV:10, fVP:6 };
+const duct = { tab:"hood", mode:"size", pick:"std", customD:250, qSrc:"hood", qUnit:"min", qDirect:0.24, Vd:10, fD:200, vMode:"V", fV:10, fVP:6 };
 const areaOf = mm => Math.PI * Math.pow(mm / 1000, 2) / 4;   // 지름 mm → 단면적 m²
 
 /* 강의자료 제4장 문제 3-1 ~ 3-3: 후드 값과 반송속도를 함께 불러옴 */
@@ -603,7 +626,7 @@ function renderSize(){
     out("d-cm").innerHTML = `–<small>cm</small>`; out("d-area").innerHTML = `–<small>m²</small>`;
     out("d-std").innerHTML = `–<small>mm</small>`; out("d-vact").innerHTML = `–<small>m/s</small>`;
     out("d-steps").textContent = "환기량 Q와 최소 반송속도 Vd를 확인해 주세요.";
-    out("size-table").innerHTML = ""; out("duct-drawing").innerHTML = ""; warn.hidden = true; return;
+    out("size-table").innerHTML = ""; out("duct-drawing").innerHTML = ""; warn.hidden = true; renderPick(NaN, NaN, NaN, null); return;
   }
   const A = Q / Vd, D = 2 * Math.sqrt(A / Math.PI), Dmm = D * 1000;
   let idx = -1; STD_DUCTS.forEach((s,i) => { if(s[1] <= Dmm + 1e-9) idx = i; });
@@ -634,6 +657,57 @@ function renderSize(){
   if(idx < 0) drawDuctSection(Dmm, null, Vd, NaN);
   out("d-steps").textContent = lines.join("\n");
   renderSizeTable(Q, Vd, idx);
+  renderPick(Q, Vd, Dmm, idx >= 0 ? STD_DUCTS[idx] : null);
+}
+
+/* 적용할 덕트 직경: ① 이론 직경 ② 상용 규격 ③ 직접 선택 — 세 조건 비교 */
+const PICKS = [
+  { v:"theory", t:"① 이론 직경", note:"반송속도로 정한 직경 그대로 맞춤 제작할 때 씁니다. 덕트속도가 최소 반송속도와 같아집니다." },
+  { v:"std",    t:"② 상용 규격", note:"시판 규격 중 이론 직경 이하에서 가장 큰 것입니다. 반송속도를 만족하면서 압력손실이 가장 작습니다." },
+  { v:"custom", t:"③ 직접 선택", note:"현장 여건 등으로 직경을 직접 정할 때 씁니다. 반송속도를 만족하는지 아래에서 확인하세요." },
+];
+function renderPick(Q, Vd, Dmm, std){
+  const out = id => document.getElementById(id);
+  const cIn = out("in-cD");
+  const cOk = Number.isFinite(duct.customD) && duct.customD > 0;
+  setBad(cIn, duct.pick === "custom" && !cOk);
+  out("f-custom").hidden = duct.pick !== "custom";
+  out("pick-note").textContent = PICKS.find(p => p.v === duct.pick).note;
+  const warn = out("pick-warn"); warn.hidden = true;
+  if(!Number.isFinite(Q) || !Number.isFinite(Vd)){
+    out("pick-table").innerHTML = ""; out("pick-steps").textContent = "환기량 Q와 최소 반송속도 Vd를 확인해 주세요.";
+    out("pk-d").innerHTML = `–<small>mm</small>`; out("pk-v").innerHTML = `–<small>m/s</small>`; out("pk-r").innerHTML = "–"; return;
+  }
+  const rows = [
+    { v:"theory", name:"① 이론 직경",  mm:Dmm,                     label:`${fmt(Dmm,1)} mm` },
+    { v:"std",    name:"② 상용 규격",  mm:std ? std[1] : NaN,       label:std ? `${std[1]} mm (${std[0]}″)` : "해당 규격 없음" },
+    { v:"custom", name:"③ 직접 선택",  mm:cOk ? duct.customD : NaN, label:cOk ? `${fmt(duct.customD,1)} mm` : "입력 필요" },
+  ].map(r => { const A = areaOf(r.mm), V = Q / A; return { ...r, A, V }; });
+  out("pick-table").innerHTML = `<thead><tr><th>조건</th><th>직경 D</th><th>단면적 A (m²)</th><th>덕트속도 V (m/s)</th><th>V / Vd</th><th>판정</th></tr></thead><tbody>${
+    rows.map(r => {
+      const ok = Number.isFinite(r.V), meet = ok && r.V >= Vd - 1e-9;
+      const tag = !ok ? "–" : r.v === "theory" ? `<span class="pill ok">V = Vd</span>` : meet ? `<span class="pill ok">충족</span>` : `<span class="pill no">미달</span>`;
+      return `<tr class="${r.v === duct.pick ? "sel" : ""}"><td style="text-align:left;font-family:var(--f-body)">${r.name}${r.v === duct.pick ? ' <span class="pill pick">적용</span>' : ""}</td><td>${r.label}</td><td>${ok ? fmt(r.A,5) : "–"}</td><td>${ok ? fmt(r.V,2) : "–"}</td><td>${ok ? fmt(r.V/Vd,2) : "–"}</td><td>${tag}</td></tr>`;
+    }).join("")}</tbody>`;
+  const p = rows.find(r => r.v === duct.pick);
+  if(!Number.isFinite(p.V)){
+    out("pk-d").innerHTML = `–<small>mm</small>`; out("pk-v").innerHTML = `–<small>m/s</small>`; out("pk-r").innerHTML = "–";
+    out("pick-steps").textContent = duct.pick === "custom" ? "직접 선택할 덕트 직경을 넣어 주세요." : "이론 직경이 규격표 범위를 벗어나 상용 규격을 정할 수 없습니다.";
+    return;
+  }
+  out("pk-d").innerHTML = `${fmt(p.mm, p.v === "theory" ? 1 : 0)}<small>mm</small>`;
+  out("pk-v").innerHTML = `${fmt(p.V,2)}<small>m/s</small>`;
+  out("pk-r").innerHTML = `${fmt(p.V/Vd,2)}<small>배</small>`;
+  if(p.V < Vd - 1e-9){
+    warn.hidden = false;
+    warn.textContent = `선택한 직경 ${fmt(p.mm,1)} mm에서는 덕트속도 ${fmt(p.V,2)} m/s가 최소 반송속도 ${f(Vd)} m/s보다 낮아 오염물질이 덕트에 쌓일 수 있습니다. 이론 직경 ${fmt(Dmm,1)} mm 이하로 줄여 주세요.`;
+  }
+  out("pick-steps").textContent = [
+    `적용: ${p.name} → D = ${fmt(p.mm,1)} mm = ${f(p.mm/1000)} m`,
+    `A = π × D² / 4 = π × ${f(p.mm/1000)}² / 4 = ${f(p.A)} m²`,
+    `V = Q / A = ${f(Q)} / ${f(p.A)} = ${f(p.V)} m/s`,
+    `V / Vd = ${f(p.V)} / ${f(Vd)} = ${f(p.V/Vd)}  → ${p.V >= Vd - 1e-9 ? "최소 반송속도 충족" : "최소 반송속도 미달"}`
+  ].join("\n");
 }
 
 function renderSizeTable(Q, Vd, idx){
@@ -803,6 +877,7 @@ function initDuct(){
     duct.mode = m;
     document.getElementById("pane-size").hidden = m !== "size";
     document.getElementById("pane-size-table").hidden = m !== "size";
+    document.getElementById("pane-pick").hidden = m !== "size";
     document.getElementById("pane-flow").hidden = m !== "flow";
     document.getElementById("row-dex").hidden = m !== "size";
     m === "size" ? computeDuct() : renderFlow();
@@ -835,6 +910,14 @@ function initDuct(){
   const vdBox = document.getElementById("vd-presets");
   VD_PRESETS.forEach(p => { const b = document.createElement("button"); b.type = "button"; b.className = "preset"; b.textContent = p.t;
     b.addEventListener("click", () => { vdIn.value = p.v; duct.Vd = p.v; computeDuct(); }); vdBox.appendChild(b); });
+
+  // 적용 덕트 직경 선택
+  chipRow("row-pick", PICKS, it => duct.pick === it.v, it => { duct.pick = it.v; computeDuct(); });
+  const cIn = document.getElementById("in-cD"), cSel = document.getElementById("sel-cD");
+  cSel.innerHTML = `<option value="">상용 규격에서 선택…</option>` + STD_DUCTS.map(s => `<option value="${s[1]}">${s[1]} mm (${s[0]}″)</option>`).join("");
+  cIn.value = duct.customD; cSel.value = String(duct.customD);
+  cIn.addEventListener("input", () => { duct.customD = parseFloat(cIn.value); cSel.value = STD_DUCTS.some(s => s[1] === duct.customD) ? String(duct.customD) : ""; computeDuct(); });
+  cSel.addEventListener("change", () => { if(cSel.value){ cIn.value = cSel.value; duct.customD = +cSel.value; computeDuct(); } });
 
   // 덕트 환기량 모드
   const dIn = document.getElementById("in-fD"), sel = document.getElementById("sel-fD");
