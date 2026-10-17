@@ -1,0 +1,873 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px/1.5 system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>국소배기 설계 계산기</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: 상단 형식 선택 → 좌측 입력 / 우측 도식·결과 → 하단 덕트 크기. 좁은 화면에서는 한 줄로 쌓임 */
+:root{
+  --bg:#eef1f3; --panel:#ffffff; --ink:#1b2329; --muted:#5c6973; --line:#cfd6db;
+  --accent:#1f5f7a; --accent-soft:#dbe9ef; --mark:#e5b300; --warn-bg:#fff4d1; --warn-ink:#6b4f00;
+  --draw:#33424c; --airflow:#2c86a8; --bad:#b83a2c;
+  --f-body:"IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --f-mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12181c; --panel:#1a2227; --ink:#e3e9ec; --muted:#93a1aa; --line:#2e3a41;
+  --accent:#6cb6d4; --accent-soft:#1d3440; --mark:#e5b300; --warn-bg:#3a2f0c; --warn-ink:#f2d77a;
+  --draw:#b7c4cb; --airflow:#5cb3d6; --bad:#ef7a6b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12181c; --panel:#1a2227; --ink:#e3e9ec; --muted:#93a1aa; --line:#2e3a41;
+  --accent:#6cb6d4; --accent-soft:#1d3440; --mark:#e5b300; --warn-bg:#3a2f0c; --warn-ink:#f2d77a;
+  --draw:#b7c4cb; --airflow:#5cb3d6; --bad:#ef7a6b; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55}
+.wrap{max-width:1060px;margin:0 auto;padding-block:28px 48px;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));
+  display:flex;flex-direction:column;gap:22px}
+
+header{display:flex;flex-direction:column;gap:6px}
+.eyebrow{font-size:12px;letter-spacing:.08em;color:var(--muted);font-weight:500}
+h1{margin:0;font-size:clamp(24px,3.4vw,32px);font-weight:700;text-wrap:balance;letter-spacing:-.01em}
+header p{margin:0;color:var(--muted);max-width:64ch}
+
+.types{display:flex;flex-direction:column;gap:10px}
+.group-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.group-label{font-size:12px;color:var(--muted);min-width:64px;letter-spacing:.04em}
+.chip{font:inherit;font-size:14px;padding:7px 14px;border-radius:6px;border:1px solid var(--line);
+  background:var(--panel);color:var(--ink);cursor:pointer}
+.chip.sm{font-size:13px;padding:5px 12px}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--panel);font-weight:500}
+.chip:focus-visible,input:focus-visible,.preset:focus-visible,summary:focus-visible,.linkbtn:focus-visible{outline:2px solid var(--mark);outline-offset:2px}
+
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:22px}
+@media (max-width:780px){.grid{grid-template-columns:minmax(0,1fr)}}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:20px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.panel h2{margin:0;font-size:15px;font-weight:700}
+.title-row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.linkbtn{font:inherit;font-size:12px;background:none;border:0;color:var(--accent);cursor:pointer;padding:0;text-decoration:underline;text-underline-offset:3px}
+.formula{font-family:var(--f-mono);font-size:20px;font-weight:500;color:var(--accent);
+  padding:10px 14px;background:var(--accent-soft);border-radius:6px}
+.fields{display:flex;flex-direction:column;gap:14px}
+
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:14px;font-weight:500;display:flex;justify-content:space-between;gap:8px}
+.field label .sym{font-family:var(--f-mono);color:var(--muted);font-weight:400}
+.inrow{display:flex;align-items:stretch;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--bg)}
+.inrow input{flex:1;min-width:0;border:0;background:transparent;color:var(--ink);font-family:var(--f-mono);font-size:17px;padding:9px 12px;font-variant-numeric:tabular-nums}
+.inrow .unit{font-family:var(--f-mono);font-size:13px;color:var(--muted);padding:0 12px;display:flex;align-items:center;border-left:1px solid var(--line);min-width:52px;justify-content:center}
+.field.bad .inrow{border-color:var(--bad)}
+.err{font-size:12px;color:var(--bad)}
+.presets{display:flex;flex-wrap:wrap;gap:6px}
+.preset{font:inherit;font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}
+.preset:hover{color:var(--ink);border-color:var(--muted)}
+.note{font-size:13px;color:var(--muted);margin:0}
+.warn{font-size:13px;margin:0;padding:10px 12px;border-radius:6px;background:var(--warn-bg);color:var(--warn-ink)}
+
+details{font-size:13px;color:var(--muted)}
+summary{cursor:pointer;color:var(--ink);font-weight:500}
+.reftable{overflow-x:auto;margin-top:8px}
+.reftable table{border-collapse:collapse;width:100%;min-width:420px;font-size:12.5px}
+.reftable th,.reftable td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.reftable th{color:var(--ink);font-weight:500}
+.reftable td.num{font-family:var(--f-mono);white-space:nowrap;color:var(--ink);font-variant-numeric:tabular-nums}
+
+.result{display:flex;flex-wrap:wrap;gap:14px 28px;align-items:baseline;border-top:3px solid var(--mark);padding-top:14px}
+.big{display:flex;flex-direction:column}
+.big .k{font-size:12px;color:var(--muted);letter-spacing:.03em}
+.big .v{font-family:var(--f-mono);font-size:clamp(28px,4.4vw,38px);font-weight:600;font-variant-numeric:tabular-nums;line-height:1.15}
+.big .v small{font-size:14px;font-weight:400;color:var(--muted);margin-left:4px}
+.big.sub .v{font-size:21px}
+.steps{font-family:var(--f-mono);font-size:13px;line-height:1.9;background:var(--bg);border-radius:6px;padding:12px 14px;overflow-x:auto;white-space:pre}
+
+.duct{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:22px}
+@media (max-width:780px){.duct{grid-template-columns:minmax(0,1fr)}}
+.duct > div{display:flex;flex-direction:column;gap:14px;min-width:0}
+
+
+/* 단계 탭 */
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);overflow-x:auto}
+.tab{font:inherit;font-size:15px;font-weight:500;padding:10px 16px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;
+  background:none;color:var(--muted);cursor:pointer;white-space:nowrap}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--mark)}
+.tab:focus-visible{outline:2px solid var(--mark);outline-offset:-2px}
+.tabpane{display:flex;flex-direction:column;gap:0}
+#tab-hood{gap:22px}
+.linked{font-size:14px;padding:10px 12px;border:1px dashed var(--line);border-radius:6px;display:flex;flex-direction:column;gap:2px}
+.linked b{font-family:var(--f-mono);font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+select{font:inherit;font-size:14px;flex:1;min-width:0;border:0;background:transparent;color:var(--ink);padding:8px 10px}
+select:focus-visible{outline:2px solid var(--mark);outline-offset:2px}
+details.panel{display:block}
+details.panel[open] summary{margin-bottom:6px}
+.sizetable{overflow:auto;max-height:340px;border:1px solid var(--line);border-radius:6px}
+.sizetable table{border-collapse:collapse;width:100%;min-width:440px;font-size:13px}
+.sizetable th{position:sticky;top:0;background:var(--panel);text-align:right;padding:7px 12px;border-bottom:1px solid var(--line);font-weight:500;color:var(--muted);font-size:12px}
+.sizetable td{text-align:right;padding:6px 12px;border-bottom:1px solid var(--line);font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.sizetable th:last-child,.sizetable td:last-child{text-align:left}
+.sizetable tr.sel td{background:var(--accent-soft);font-weight:600}
+.sizetable tr.under td{color:var(--muted)}
+.pill{display:inline-block;font-family:var(--f-body);font-size:11.5px;padding:1px 8px;border-radius:999px;border:1px solid currentColor}
+.pill.ok{color:var(--accent)} .pill.no{color:var(--bad)} .pill.pick{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+svg text{font-family:var(--f-mono)}
+.drawing{width:100%;height:auto;display:block}
+footer{font-size:12px;color:var(--muted);max-width:90ch}
+@keyframes drift{from{stroke-dashoffset:0}to{stroke-dashoffset:-24}}
+.flow{animation:drift 1.2s linear infinite}
+@media (prefers-reduced-motion: reduce){.flow{animation:none}}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">산업환기 · 국소배기장치 설계</span>
+    <h1>국소배기 설계 계산기</h1>
+    <p>후드에서 필요환기량 Q를 구하고, 그 Q로 덕트 지름과 상용 규격, 실제 덕트속도까지 이어서 계산합니다.</p>
+  </header>
+
+  <nav class="tabs" aria-label="설계 단계">
+    <button type="button" class="tab" data-tab="hood">① 후드 · 필요환기량</button>
+    <button type="button" class="tab" data-tab="duct">② 덕트 크기</button>
+  </nav>
+
+  <div id="tab-hood" class="tabpane">
+  <section class="types" aria-label="후드 형식과 단위">
+    <div class="group-row" id="row-main"><span class="group-label">형식</span></div>
+    <div class="group-row" id="row-ext"><span class="group-label">외부식</span></div>
+    <div class="group-row" id="row-unit"><span class="group-label">길이 단위</span></div>
+  </section>
+
+  <div class="grid">
+    <section class="panel" aria-label="입력">
+      <div class="title-row">
+        <h2 id="hood-title">부스식</h2>
+        <button class="linkbtn" id="reset-ex" type="button">예제 값으로</button>
+      </div>
+      <div class="formula" id="formula"></div>
+      <div class="group-row" id="row-shape" hidden><span class="group-label">개구 모양</span></div>
+      <div class="fields" id="fields"></div>
+      <p class="note" id="hood-note"></p>
+      <details>
+        <summary>제어속도 범위 참고 (ACGIH Table 3-1)</summary>
+        <div class="reftable"><table>
+          <thead><tr><th>오염물질 발생 조건</th><th>예</th><th>Vc (m/s)</th></tr></thead>
+          <tbody>
+            <tr><td>거의 정지한 공기 중으로 속도 없이 발생</td><td>탱크 증발, 탈지</td><td class="num">0.25–0.5</td></tr>
+            <tr><td>비교적 조용한 공기 중으로 낮은 속도로 발생</td><td>스프레이 부스, 간헐적 용기 충전, 저속 컨베이어 이송, 용접, 도금, 산세</td><td class="num">0.5–1.0</td></tr>
+            <tr><td>기류가 빠른 곳에서 활발히 발생</td><td>얕은 부스 스프레이 도장, 드럼 충전, 컨베이어 적재, 파쇄기</td><td class="num">1.0–2.5</td></tr>
+            <tr><td>매우 빠른 기류 속으로 높은 초기속도로 발생</td><td>연삭, 연마 블라스팅, 텀블링</td><td class="num">2.5–10.0</td></tr>
+          </tbody>
+        </table></div>
+        <p class="note" style="margin-top:8px">실내 기류가 약하고 독성이 낮으며 간헐 작업·대형 후드이면 범위 하단, 반대면 상단을 씁니다.</p>
+      </details>
+    </section>
+
+    <section class="panel" aria-label="결과">
+      <svg class="drawing" id="drawing" viewBox="0 0 420 240" role="img" aria-label="후드 도식"></svg>
+      <p class="warn" id="warn" hidden></p>
+      <div class="result">
+        <div class="big"><span class="k">필요환기량 Q</span><span class="v" id="q-min">–</span></div>
+        <div class="big sub"><span class="k">초당 환산</span><span class="v" id="q-sec">–</span></div>
+        <div id="extras" style="display:contents"></div>
+      </div>
+      <div class="steps" id="steps"></div>
+    </section>
+  </div>
+
+  </div>
+
+  <div id="tab-duct" class="tabpane" hidden>
+    <section class="types" aria-label="덕트 계산 종류">
+      <div class="group-row" id="row-dmode"><span class="group-label">계산</span></div>
+      <div class="group-row" id="row-dex"><span class="group-label">예제</span></div>
+    </section>
+
+    <!-- 덕트 크기 결정: Q, Vd → D → 상용 규격 → 실제 속도 -->
+    <div id="pane-size" class="grid" style="margin-top:22px">
+      <section class="panel" aria-label="덕트 크기 입력">
+        <h2>덕트 크기 결정</h2>
+        <div class="formula">A = Q / Vd,&nbsp; D = 2√(A/π)</div>
+
+        <div class="field">
+          <label><span>환기량</span><span class="sym">Q</span></label>
+          <div class="group-row" id="row-qsrc"></div>
+          <div id="q-linked" class="linked"></div>
+          <div id="q-direct" hidden>
+            <div class="inrow"><input id="in-Qd" type="number" inputmode="decimal" min="0" step="any"><span class="unit" id="q-unit-label">m³/min</span></div>
+            <div class="group-row" id="row-qunit" style="margin-top:8px"></div>
+          </div>
+          <span class="err" id="q-err" hidden>0보다 큰 숫자를 넣어 주세요.</span>
+        </div>
+
+        <div class="field" id="f-Vd">
+          <label for="in-Vd"><span>최소 반송속도</span><span class="sym">Vd</span></label>
+          <div class="inrow"><input id="in-Vd" type="number" inputmode="decimal" min="0" step="any"><span class="unit">m/s</span></div>
+          <span class="err" hidden>0보다 큰 숫자를 넣어 주세요.</span>
+          <div class="presets" id="vd-presets"></div>
+        </div>
+        <p class="note">덕트 안으로 들어온 오염물질이 쌓이거나 가라앉지 않고 이송되는 최소 기류속도입니다. 빠른 선택값은 아래 표 범위의 하한입니다.</p>
+        <details>
+          <summary>최소 반송속도 범위 (ACGIH Table 3-2)</summary>
+          <div class="reftable"><table>
+            <thead><tr><th>오염물질</th><th>예</th><th>Vd (m/s)</th></tr></thead>
+            <tbody>
+              <tr><td>증기·가스·연기</td><td>모든 증기, 가스, 연기</td><td class="num">임의 (경제적 5–10)</td></tr>
+              <tr><td>흄</td><td>용접</td><td class="num">10–13</td></tr>
+              <tr><td>매우 가벼운 미세분진</td><td>면 보풀, 목분, 석판 분말</td><td class="num">12–15</td></tr>
+              <tr><td>건조 분진·분말</td><td>고무 분진, 베이클라이트 성형 분진, 황마·면 분진, 가벼운 대팻밥, 비누 분진, 가죽 부스러기</td><td class="num">15–20</td></tr>
+              <tr><td>일반 산업분진</td><td>연삭 분진, 버핑 보풀(건), 커피콩, 화강암 분진, 규사 분말, 일반 물질 취급, 벽돌 절단, 점토, 주물(일반), 석회석 분진</td><td class="num">18–20</td></tr>
+              <tr><td>무거운 분진</td><td>톱밥(무겁고 젖은), 금속 절삭칩, 주물 텀블링·탈사, 샌드블라스트 분진, 황동 절삭칩, 주철 보링 분진, 납 분진</td><td class="num">20–23</td></tr>
+              <tr><td>무겁거나 습한 분진</td><td>작은 칩이 섞인 납 분진, 습한 시멘트 분진, 버핑 보풀(끈적), 생석회 분진</td><td class="num">23 이상</td></tr>
+            </tbody>
+          </table></div>
+        </details>
+      </section>
+
+      <section class="panel" aria-label="덕트 크기 결과">
+        <svg class="drawing" id="duct-drawing" viewBox="0 0 420 210" role="img" aria-label="덕트 단면 비교"></svg>
+        <p class="warn" id="d-warn" hidden></p>
+        <div class="result">
+          <div class="big"><span class="k">이론 덕트 지름 D</span><span class="v" id="d-cm">–</span></div>
+          <div class="big sub"><span class="k">이론 단면적 A</span><span class="v" id="d-area">–</span></div>
+        </div>
+        <div class="result" style="border-top-color:var(--accent)">
+          <div class="big"><span class="k">상용 덕트 선정</span><span class="v" id="d-std">–</span></div>
+          <div class="big sub"><span class="k">실제 덕트속도 V'</span><span class="v" id="d-vact">–</span></div>
+        </div>
+        <div class="steps" id="d-steps"></div>
+      </section>
+    </div>
+
+    <section class="panel" id="pane-size-table" aria-label="상용 덕트 규격표" style="margin-top:22px">
+      <div class="title-row">
+        <h2>상용 덕트 규격별 덕트속도</h2>
+        <span class="note">이론 지름 이하에서 가장 큰 규격을 선정</span>
+      </div>
+      <div class="sizetable" id="size-table"></div>
+      <p class="note">규격을 이론 지름보다 크게 하면 덕트속도가 최소 반송속도보다 낮아져 오염물질이 쌓입니다. 너무 작게 하면 속도는 충분하지만 압력손실이 커져 송풍기 동력이 늘어납니다.</p>
+    </section>
+
+    <!-- 덕트 환기량: D, V → Q -->
+    <div id="pane-flow" class="grid" style="margin-top:22px" hidden>
+      <section class="panel" aria-label="덕트 환기량 입력">
+        <h2>덕트 환기량</h2>
+        <div class="formula">Q = V × A,&nbsp; A = πD²/4</div>
+        <div class="field">
+          <label for="in-fD"><span>덕트 지름</span><span class="sym">D</span></label>
+          <div class="inrow"><input id="in-fD" type="number" inputmode="decimal" min="0" step="any"><span class="unit">mm</span></div>
+          <span class="err" hidden>0보다 큰 숫자를 넣어 주세요.</span>
+          <div class="inrow" style="margin-top:4px"><select id="sel-fD" aria-label="상용 규격에서 선택"></select></div>
+        </div>
+        <div class="field">
+          <label><span>덕트속도 입력 방식</span></label>
+          <div class="group-row" id="row-vmode"></div>
+        </div>
+        <div class="field" id="f-fV">
+          <label for="in-fV"><span>덕트속도</span><span class="sym">V</span></label>
+          <div class="inrow"><input id="in-fV" type="number" inputmode="decimal" min="0" step="any"><span class="unit">m/s</span></div>
+          <span class="err" hidden>0보다 큰 숫자를 넣어 주세요.</span>
+        </div>
+        <div class="field" id="f-fVP" hidden>
+          <label for="in-fVP"><span>속도압</span><span class="sym">VP</span></label>
+          <div class="inrow"><input id="in-fVP" type="number" inputmode="decimal" min="0" step="any"><span class="unit">mmH₂O</span></div>
+          <span class="err" hidden>0보다 큰 숫자를 넣어 주세요.</span>
+          <p class="note">피토관으로 잰 속도압에서 V = 4.043√VP 로 덕트속도를 구합니다(표준공기 기준).</p>
+        </div>
+      </section>
+      <section class="panel" aria-label="덕트 환기량 결과">
+        <svg class="drawing" id="flow-drawing" viewBox="0 0 420 210" role="img" aria-label="덕트 단면"></svg>
+        <div class="result">
+          <div class="big"><span class="k">덕트 환기량 Q</span><span class="v" id="f-qmin">–</span></div>
+          <div class="big sub"><span class="k">초당 환산</span><span class="v" id="f-qsec">–</span></div>
+          <div class="big sub"><span class="k">단면적 A</span><span class="v" id="f-area">–</span></div>
+        </div>
+        <div class="steps" id="f-steps"></div>
+      </section>
+    </div>
+
+    <details class="panel" style="margin-top:22px">
+      <summary>덕트 재질별 절대조도 (다음 단계 압력손실 계산에 쓰임)</summary>
+      <div class="reftable"><table>
+        <thead><tr><th>재질</th><th>절대조도 (mm)</th></tr></thead>
+        <tbody>
+          <tr><td>아연도금강판 (Galvanized sheet)</td><td class="num">0.15</td></tr>
+          <tr><td>플렉시블 덕트 (Flexible duct)</td><td class="num">0.9</td></tr>
+          <tr><td>강관 (Steel duct)</td><td class="num">자료에 값 없음</td></tr>
+          <tr><td>스테인리스 스틸관 (Stainless steel)</td><td class="num">0.05</td></tr>
+          <tr><td>알루미늄 (Aluminum)</td><td class="num">0.05</td></tr>
+        </tbody>
+      </table></div>
+      <p class="note" style="margin-top:8px">원형 덕트는 압력과 유속이 큰 공장 환기에, 사각형 덕트는 압력이 작고 유속이 느린 일반 건물에 주로 씁니다.</p>
+    </details>
+  </div>
+
+  <footer>공식: Dalla Valle의 후드별 Q 식(강의자료 표). 형식 버튼의 제어속도 빠른 선택값은 산업안전보건기준에 관한 규칙 별표 13 기준으로, 부스식은 포위식, 외부식은 측방흡인형, 캐노피는 상방흡인형 값입니다. 다중 슬롯 후드(슬롯 2개 이상)는 일반·플랜지 일반 식을 그대로 씁니다. 덕트: 최소 반송속도는 ACGIH Industrial Ventilation Table 3-2, 상용 덕트 규격과 절대조도는 강의자료(제4장 덕트의 크기 설계) 표 기준입니다.</footer>
+</div>
+
+<script>
+/* =========================================================
+   0) 공통 도우미
+   ========================================================= */
+const LEN = { m: 1, cm: 0.01 };          // 화면 단위 → m 환산 배수
+let unit = "m";
+function f(x){ return Number.isFinite(x) ? (+x.toPrecision(4)).toString() : "–"; }
+function fmt(x,d){ return Number.isFinite(x) ? x.toLocaleString("ko-KR",{maximumFractionDigits:d,minimumFractionDigits:d}) : "–"; }
+function lenTxt(m){ return unit === "cm" ? `${f(m*100)} cm` : `${f(m)} m`; }
+
+/* 제어속도 빠른 선택 (별표 13) */
+const VC_BOOTH = [{t:"가스상 0.4",v:0.4},{t:"입자상 0.7",v:0.7}];
+const VC_SIDE  = [{t:"가스상 0.5",v:0.5},{t:"입자상 1.0",v:1.0}];
+const VC_TOP   = [{t:"가스상 1.0",v:1.0},{t:"입자상 1.2",v:1.2}];
+const vc  = presets => ({ key:"Vc", name:"제어속도", sym:"Vc", kind:"vel", presets });
+const len = (key, name, sym) => ({ key, name, sym, kind:"len" });
+
+/* =========================================================
+   1) 후드 정의 — 새 후드는 여기 항목만 추가하면 됩니다.
+      inputs(shape): 입력 칸 목록
+      calc(v, shape): { Q[m³/s], steps[], extras[], warn }
+   ========================================================= */
+function plainHood(id, label, k){
+  return {
+    id, group:"ext", label, shapes:["round","rect"],
+    formula: k === 1 ? "Q = Vc (10X² + A)" : "Q = 0.75 Vc (10X² + A)",
+    note: k === 1
+      ? "개구면 가로세로비(W/L)가 0.2 이상이거나 원형인 후드. 제어거리 X가 커질수록 X²에 비례해 Q가 급격히 늘어납니다."
+      : "개구면 둘레에 플랜지를 달면 뒤쪽 공기 유입이 줄어 같은 제어속도에서 Q가 약 25% 줄어듭니다.",
+    example: { label:"강의자료 문제 1", shape:"round", v:{ Vc:0.5, X:0.10, D:0.10, W:0.10, L:0.30 } },
+    inputs: shape => [ vc(VC_SIDE), len("X","제어거리","X"),
+      ...(shape === "round" ? [len("D","개구 지름","D")] : [len("W","개구 짧은 변","W"), len("L","개구 긴 변","L")]) ],
+    calc: (v, shape) => {
+      const A  = shape === "round" ? Math.PI * v.D * v.D / 4 : v.W * v.L;
+      const tx = 10 * v.X * v.X;
+      const Q  = k * v.Vc * (tx + A);
+      const aLine = shape === "round"
+        ? `A   = π·D²/4 = π × ${f(v.D)}² / 4 = ${f(A)} m²`
+        : `A   = W × L = ${f(v.W)} × ${f(v.L)} = ${f(A)} m²`;
+      const r = shape === "rect" ? Math.min(v.W, v.L) / Math.max(v.W, v.L) : 1;
+      return {
+        Q,
+        steps: [ aLine,
+          `10X² = 10 × ${f(v.X)}² = ${f(tx)} m²`,
+          `Q   = ${k === 1 ? "" : "0.75 × "}${f(v.Vc)} × (${f(tx)} + ${f(A)}) = ${f(Q)} m³/s`,
+          `Q   = ${f(Q)} × 60 = ${f(Q*60)} m³/min` ],
+        extras: [ {k:"개구면적 A", v:A, u:"m²", d:4}, {k:"개구면 속도 Q/A", v:Q/A, u:"m/s", d:2} ],
+        warn: r < 0.2 ? `가로세로비 W/L = ${fmt(r,3)}로 0.2 미만입니다. 이 형태는 슬롯 후드 식(Q = ${k===1?"3.7":"2.6"} L·Vc·X)을 적용합니다.` : null
+      };
+    },
+    draw: (v, shape) => drawExternal(v, {
+      face: shape === "round" ? v.D : v.W, faceSym: shape === "round" ? "D" : "W",
+      flange: k !== 1, aside: shape === "rect" ? `L = ${lenTxt(v.L)} (지면 안쪽)` : "원형 개구" })
+  };
+}
+
+function slotHood(id, label, k, example){
+  return {
+    id, group:"ext", label,
+    formula: `Q = ${k} L · Vc · X`,
+    note: k === 3.7
+      ? "가로세로비(W/L)가 0.2 이하인 가늘고 긴 개구. Q가 X에 1차로 비례합니다. 슬롯속도는 Q를 슬롯 면적(L×W)으로 나눈 값입니다."
+      : "플랜지가 달린 슬롯. 일반 슬롯보다 Q가 약 30% 적습니다(3.7 → 2.6).",
+    example,
+    inputs: () => [ vc(VC_SIDE), len("X","제어거리","X"), len("L","슬롯 길이","L"), len("W","슬롯 폭","W") ],
+    calc: v => {
+      const Q  = k * v.L * v.Vc * v.X;
+      const As = v.L * v.W;
+      const r  = Math.min(v.W, v.L) / Math.max(v.W, v.L);
+      return {
+        Q,
+        steps: [
+          `Q   = ${k} × L × Vc × X = ${k} × ${f(v.L)} × ${f(v.Vc)} × ${f(v.X)} = ${f(Q)} m³/s`,
+          `Q   = ${f(Q)} × 60 = ${f(Q*60)} m³/min`,
+          `As  = L × W = ${f(v.L)} × ${f(v.W)} = ${f(As)} m²`,
+          `Vs  = Q / As = ${f(Q)} / ${f(As)} = ${f(Q/As)} m/s  (슬롯속도)` ],
+        extras: [ {k:"슬롯 면적 L×W", v:As, u:"m²", d:4}, {k:"슬롯속도 Vs", v:Q/As, u:"m/s", d:2} ],
+        warn: r > 0.2 ? `가로세로비 W/L = ${fmt(r,3)}로 0.2를 넘습니다. 이 형태는 ${k===3.7?"일반":"플랜지 일반"} 후드 식(Q = ${k===3.7?"":"0.75 "}Vc(10X² + A))을 적용합니다.` : null
+      };
+    },
+    draw: v => drawExternal(v, { face:v.W, faceSym:"W", flange:k !== 3.7, aside:`L = ${lenTxt(v.L)} (지면 안쪽)` })
+  };
+}
+
+const HOODS = [
+  {
+    id:"booth", group:"main", label:"부스식",
+    formula:"Q = Vc × W × H",
+    note:"부스식(포위식)은 개구면 전체에서 제어속도를 유지해야 하므로 개구면적 W×H에 Vc를 곱합니다.",
+    example:{ label:"임의 예시", v:{ Vc:0.7, W:1.2, H:0.9 } },
+    inputs: () => [ vc(VC_BOOTH), len("W","개구면 가로","W"), len("H","개구면 높이","H") ],
+    calc: v => {
+      const A = v.W * v.H, Q = v.Vc * A;
+      return { Q,
+        steps:[ `A   = W × H = ${f(v.W)} × ${f(v.H)} = ${f(A)} m²`,
+                `Q   = Vc × A = ${f(v.Vc)} × ${f(A)} = ${f(Q)} m³/s`,
+                `Q   = ${f(Q)} × 60 = ${f(Q*60)} m³/min` ],
+        extras:[ {k:"개구면적 A", v:A, u:"m²", d:3} ] };
+    },
+    draw: drawBooth
+  },
+  plainHood("ext-plain",  "일반",        1),
+  plainHood("ext-flange", "플랜지 일반", 0.75),
+  slotHood ("ext-slot",   "슬롯",        3.7, { label:"강의자료 문제 5", v:{ Vc:2, X:0.20, L:0.70, W:0.05 } }),
+  slotHood ("ext-fslot",  "플랜지 슬롯", 2.6, { label:"강의자료 문제 6 치수", v:{ Vc:1, X:0.20, L:0.70, W:0.10 } }),
+  {
+    id:"canopy", group:"main", label:"캐노피",
+    formula:"Q = 1.4 P · Vc · D",
+    note:"작업면 위에 매다는 상방 흡인 후드. P는 작업면 둘레 2(L+W), D는 작업면에서 후드까지 높이입니다. 열이 없는 공정에서 작업자가 후드와 오염원 사이에 들어가지 않을 때 씁니다.",
+    example:{ label:"임의 예시", v:{ Vc:1.0, D:0.5, L:1.0, W:0.6 } },
+    inputs: () => [ vc(VC_TOP), len("D","작업면 위 높이","D"), len("L","작업면 가로","L"), len("W","작업면 세로","W") ],
+    calc: v => {
+      const P = 2 * (v.L + v.W), Q = 1.4 * P * v.Vc * v.D;
+      return { Q,
+        steps:[ `P   = 2(L + W) = 2 × (${f(v.L)} + ${f(v.W)}) = ${f(P)} m`,
+                `Q   = 1.4 × P × Vc × D = 1.4 × ${f(P)} × ${f(v.Vc)} × ${f(v.D)} = ${f(Q)} m³/s`,
+                `Q   = ${f(Q)} × 60 = ${f(Q*60)} m³/min` ],
+        extras:[ {k:"둘레 P", v:P, u:"m", d:2} ] };
+    },
+    draw: drawCanopy
+  }
+];
+const MAIN_ORDER = ["booth", "__ext", "canopy"];
+
+/* 덕트 최소 반송속도 (ACGIH Table 3-2, 범위 하한) */
+const VD_PRESETS = [
+  {t:"가스·증기 10", v:10}, {t:"흄(용접) 10", v:10}, {t:"미세 경분진 12", v:12},
+  {t:"건조 분진 15", v:15}, {t:"일반 산업분진 18", v:18}, {t:"중분진 20", v:20}, {t:"습한·무거운 분진 23", v:23}
+];
+
+/* =========================================================
+   2) 상태: 후드별로 입력값(m 단위)과 개구 모양을 따로 기억
+   ========================================================= */
+const state = {};
+HOODS.forEach(h => { state[h.id] = { shape: h.example.shape || (h.shapes && h.shapes[0]), v: { ...h.example.v } }; });
+let current = "booth";
+let lastQ = NaN;
+
+/* =========================================================
+   3) 화면 구성
+   ========================================================= */
+function chip(text, onClick, cls){ const b=document.createElement("button"); b.type="button"; b.className="chip"+(cls?" "+cls:""); b.textContent=text; b.addEventListener("click",onClick); return b; }
+
+function buildTopRows(){
+  const rowMain = document.getElementById("row-main"), rowExt = document.getElementById("row-ext"), rowUnit = document.getElementById("row-unit");
+  MAIN_ORDER.forEach(id => {
+    const b = id === "__ext"
+      ? chip("외부식", () => select(HOODS.find(h=>h.group==="ext" && h.id===lastExt).id))
+      : chip(HOODS.find(h=>h.id===id).label, () => select(id));
+    b.dataset.id = id; rowMain.appendChild(b);
+  });
+  HOODS.filter(h=>h.group==="ext").forEach(h => { const b = chip(h.label, () => select(h.id)); b.dataset.id = h.id; rowExt.appendChild(b); });
+  ["m","cm"].forEach(u => { const b = chip(u, () => { unit = u; markUnit(); buildFields(); compute(); }, "sm"); b.dataset.unit = u; rowUnit.appendChild(b); });
+  markUnit();
+}
+let lastExt = "ext-plain";
+function markUnit(){ document.querySelectorAll("[data-unit]").forEach(b => b.setAttribute("aria-pressed", b.dataset.unit===unit ? "true":"false")); }
+
+function select(id){
+  current = id;
+  const h = HOODS.find(x=>x.id===id);
+  if(h.group === "ext") lastExt = id;
+  document.querySelectorAll("#row-main .chip, #row-ext .chip").forEach(b => {
+    const on = b.dataset.id === id || (b.dataset.id === "__ext" && h.group === "ext");
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+  document.getElementById("row-ext").style.opacity = h.group === "ext" ? "1" : ".75";
+  document.getElementById("hood-title").textContent = h.group === "ext" ? `외부식 · ${h.label}` : h.label;
+  document.getElementById("formula").textContent = h.formula;
+  document.getElementById("hood-note").textContent = `${h.note} 기본값: ${h.example.label}.`;
+  buildShapeRow(h); buildFields(); compute();
+}
+
+function buildShapeRow(h){
+  const row = document.getElementById("row-shape");
+  row.querySelectorAll(".chip").forEach(b=>b.remove());
+  row.hidden = !h.shapes;
+  if(!h.shapes) return;
+  const names = { round:"원형", rect:"사각형" };
+  h.shapes.forEach(s => {
+    const b = chip(names[s], () => { state[h.id].shape = s; buildShapeRow(h); buildFields(); compute(); }, "sm");
+    b.setAttribute("aria-pressed", state[h.id].shape === s ? "true" : "false");
+    row.appendChild(b);
+  });
+}
+
+function buildFields(){
+  const h = HOODS.find(x=>x.id===current), st = state[h.id];
+  const box = document.getElementById("fields"); box.innerHTML = "";
+  h.inputs(st.shape).forEach(inp => {
+    const id = `in-${h.id}-${inp.key}`;
+    const factor = inp.kind === "len" ? LEN[unit] : 1;
+    const shown = Number.isFinite(st.v[inp.key]) ? +(st.v[inp.key] / factor).toPrecision(6) : "";
+    const wrap = document.createElement("div"); wrap.className = "field";
+    wrap.innerHTML = `
+      <label for="${id}"><span>${inp.name}</span><span class="sym">${inp.sym}</span></label>
+      <div class="inrow"><input id="${id}" type="number" inputmode="decimal" min="0" step="any" value="${shown}"><span class="unit">${inp.kind==="len"?unit:"m/s"}</span></div>
+      <span class="err" hidden>0보다 큰 숫자를 넣어 주세요.</span>`;
+    const input = wrap.querySelector("input");
+    input.addEventListener("input", () => { st.v[inp.key] = parseFloat(input.value) * factor; compute(); });
+    if(inp.presets){
+      const p = document.createElement("div"); p.className = "presets";
+      inp.presets.forEach(pr => {
+        const b = document.createElement("button"); b.type="button"; b.className="preset"; b.textContent = pr.t;
+        b.addEventListener("click", () => { input.value = pr.v; st.v[inp.key] = pr.v; compute(); });
+        p.appendChild(b);
+      });
+      wrap.appendChild(p);
+    }
+    box.appendChild(wrap);
+  });
+}
+
+/* =========================================================
+   4) 계산
+   ========================================================= */
+function compute(){
+  const h = HOODS.find(x=>x.id===current), st = state[h.id];
+  const inputs = h.inputs(st.shape);
+  let ok = true; const v = {};
+  inputs.forEach(inp => {
+    const n = st.v[inp.key], valid = Number.isFinite(n) && n > 0;
+    const field = document.getElementById(`in-${h.id}-${inp.key}`).closest(".field");
+    field.classList.toggle("bad", !valid); field.querySelector(".err").hidden = valid;
+    if(!valid) ok = false; v[inp.key] = n;
+  });
+  const qMin = document.getElementById("q-min"), qSec = document.getElementById("q-sec");
+  const extras = document.getElementById("extras"), steps = document.getElementById("steps"), warn = document.getElementById("warn");
+  if(!ok){
+    qMin.innerHTML = `–<small>m³/min</small>`; qSec.innerHTML = `–<small>m³/s</small>`; extras.innerHTML = "";
+    steps.textContent = "입력값을 확인해 주세요."; warn.hidden = true; lastQ = NaN; computeDuct(); return;
+  }
+  const r = h.calc(v, st.shape);
+  lastQ = r.Q;
+  qMin.innerHTML = `${fmt(r.Q*60,2)}<small>m³/min</small>`;
+  qSec.innerHTML = `${fmt(r.Q,4)}<small>m³/s</small>`;
+  extras.innerHTML = r.extras.map(e => `<div class="big sub"><span class="k">${e.k}</span><span class="v">${fmt(e.v,e.d)}<small>${e.u}</small></span></div>`).join("");
+  const conv = unit === "cm"
+    ? inputs.filter(i=>i.kind==="len").map(i => `${i.sym} = ${f(v[i.key]*100)} cm → ${f(v[i.key])} m`).join(",  ")
+    : null;
+  steps.textContent = (conv ? `[단위 환산] ${conv}\n` : "") + r.steps.join("\n");
+  warn.hidden = !r.warn; if(r.warn) warn.textContent = r.warn;
+  h.draw(v, st.shape);
+  computeDuct();
+}
+
+/* =========================================================
+   4-2) 덕트 — Q = V·A 하나로 "크기 결정"과 "환기량" 두 방향을 계산
+   ========================================================= */
+const STD_DUCTS = [["3/8",10],["1/2",15],["3/4",20],["1",25],["1¼",32],["1½",40],["2",50],["2½",65],["3",80],["3½",90],
+  ["4",100],["5",125],["6",150],["8",200],["10",250],["12",300],["14",350],["16",400],["18",450],["20",500],["22",550],["24",600],["26",650],["30",750]];
+const duct = { tab:"hood", mode:"size", qSrc:"hood", qUnit:"min", qDirect:0.24, Vd:10, fD:200, vMode:"V", fV:10, fVP:6 };
+const areaOf = mm => Math.PI * Math.pow(mm / 1000, 2) / 4;   // 지름 mm → 단면적 m²
+
+/* 강의자료 제4장 문제 3-1 ~ 3-3: 후드 값과 반송속도를 함께 불러옴 */
+const DUCT_EXAMPLES = [
+  { t:"문제 3-1", hood:"ext-plain", shape:"rect", v:{ Vc:0.5, X:0.20, W:0.20, L:0.40, D:0.10 }, Vd:5 },
+  { t:"문제 3-2", hood:"ext-plain", shape:"rect", v:{ Vc:0.5, X:0.20, W:0.40, L:0.40, D:0.10 }, Vd:10 },
+  { t:"문제 3-3", hood:"ext-slot",  v:{ Vc:2, X:0.20, L:0.70, W:0.10 }, Vd:5 },
+];
+
+function hoodLabel(){
+  const h = HOODS.find(x=>x.id===current), st = state[h.id];
+  let t = h.group === "ext" ? `외부식 · ${h.label}` : h.label;
+  if(h.shapes) t += st.shape === "round" ? " (원형)" : " (사각형)";
+  return t;
+}
+const ductQ = () => duct.qSrc === "hood" ? lastQ : duct.qDirect;
+function setBad(input, bad){ const fld = input.closest(".field"); fld.classList.toggle("bad", bad); const e = fld.querySelector(".err"); if(e) e.hidden = !bad; }
+
+function computeDuct(){ renderLinked(); renderSize(); }
+
+function renderLinked(){
+  const box = document.getElementById("q-linked");
+  box.innerHTML = Number.isFinite(lastQ)
+    ? `<span class="note">${hoodLabel()} 후드의 필요환기량</span><b>${fmt(lastQ*60,2)} m³/min</b><span class="note">= ${fmt(lastQ,4)} m³/s · ① 후드 탭에서 값을 바꾸면 바로 반영됩니다</span>`
+    : `<span class="note">① 후드 탭의 입력값을 확인해 주세요.</span>`;
+}
+
+function renderSize(){
+  const Q = ductQ(), Vd = duct.Vd;
+  const qOk = Number.isFinite(Q) && Q > 0, vOk = Number.isFinite(Vd) && Vd > 0;
+  document.getElementById("q-err").hidden = duct.qSrc === "hood" || qOk;
+  setBad(document.getElementById("in-Vd"), !vOk);
+  const out = id => document.getElementById(id);
+  const warn = out("d-warn");
+  if(!qOk || !vOk){
+    out("d-cm").innerHTML = `–<small>cm</small>`; out("d-area").innerHTML = `–<small>m²</small>`;
+    out("d-std").innerHTML = `–<small>mm</small>`; out("d-vact").innerHTML = `–<small>m/s</small>`;
+    out("d-steps").textContent = "환기량 Q와 최소 반송속도 Vd를 확인해 주세요.";
+    out("size-table").innerHTML = ""; out("duct-drawing").innerHTML = ""; warn.hidden = true; return;
+  }
+  const A = Q / Vd, D = 2 * Math.sqrt(A / Math.PI), Dmm = D * 1000;
+  let idx = -1; STD_DUCTS.forEach((s,i) => { if(s[1] <= Dmm + 1e-9) idx = i; });
+  out("d-cm").innerHTML = `${fmt(D*100,2)}<small>cm</small>`;
+  out("d-area").innerHTML = `${fmt(A,5)}<small>m²</small>`;
+
+  const lines = [
+    `Q  = ${f(Q*60)} m³/min ÷ 60 = ${f(Q)} m³/s`,
+    `A  = Q / Vd = ${f(Q)} / ${f(Vd)} = ${f(A)} m²`,
+    `D  = 2√(A/π) = 2 × √(${f(A)} / π) = ${f(D)} m = ${f(D*100)} cm`
+  ];
+  warn.hidden = true;
+  if(idx < 0){
+    warn.hidden = false; warn.textContent = `이론 지름 ${fmt(Dmm,1)} mm가 규격표의 최소 규격(10 mm)보다 작습니다.`;
+    out("d-std").innerHTML = `–<small>mm</small>`; out("d-vact").innerHTML = `–<small>m/s</small>`;
+  } else {
+    const std = STD_DUCTS[idx], As = areaOf(std[1]), Va = Q / As;
+    if(Dmm > 750){ warn.hidden = false; warn.textContent = `이론 지름 ${fmt(Dmm,1)} mm가 규격표의 최대 규격(750 mm)보다 큽니다. 표 안에서는 750 mm가 선정됩니다.`; }
+    out("d-std").innerHTML = `${std[1]}<small>mm · ${std[0]}″</small>`;
+    out("d-vact").innerHTML = `${fmt(Va,2)}<small>m/s</small>`;
+    lines.push(
+      `상용 규격: ${fmt(Dmm,1)} mm 이하 중 가장 큰 규격 → ${std[1]} mm (${std[0]} inch)`,
+      `A' = π × ${f(std[1]/1000)}² / 4 = ${f(As)} m²`,
+      `V' = Q / A' = ${f(Q)} / ${f(As)} = ${f(Va)} m/s  (≥ Vd ${f(Vd)} m/s)`
+    );
+    drawDuctSection(Dmm, std[1], Vd, Va);
+  }
+  if(idx < 0) drawDuctSection(Dmm, null, Vd, NaN);
+  out("d-steps").textContent = lines.join("\n");
+  renderSizeTable(Q, Vd, idx);
+}
+
+function renderSizeTable(Q, Vd, idx){
+  const box = document.getElementById("size-table");
+  const rows = STD_DUCTS.map((s,i) => {
+    const V = Q / areaOf(s[1]);
+    const tag = i === idx ? `<span class="pill pick">선정</span>` : V >= Vd ? `<span class="pill ok">충족</span>` : `<span class="pill no">미달</span>`;
+    return `<tr class="${i===idx?"sel":""} ${V<Vd?"under":""}"><td>${s[0]}″</td><td>${s[1]}</td><td>${fmt(areaOf(s[1]),5)}</td><td>${fmt(V,2)}</td><td>${tag}</td></tr>`;
+  }).join("");
+  box.innerHTML = `<table><thead><tr><th>inch</th><th>mm</th><th>단면적 (m²)</th><th>덕트속도 (m/s)</th><th>Vd ${f(Vd)} m/s 기준</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const sel = box.querySelector("tr.sel");
+  if(sel) box.scrollTop = Math.max(0, sel.offsetTop - box.clientHeight / 2);
+}
+
+function renderFlow(){
+  const dIn = document.getElementById("in-fD"), vIn = document.getElementById("in-fV"), vpIn = document.getElementById("in-fVP");
+  const D = duct.fD, useVP = duct.vMode === "VP";
+  const V = useVP ? 4.043 * Math.sqrt(duct.fVP) : duct.fV;
+  const dOk = Number.isFinite(D) && D > 0, vOk = useVP ? (Number.isFinite(duct.fVP) && duct.fVP > 0) : (Number.isFinite(V) && V > 0);
+  setBad(dIn, !dOk); setBad(useVP ? vpIn : vIn, !vOk);
+  const out = id => document.getElementById(id);
+  if(!dOk || !vOk){
+    out("f-qmin").innerHTML = `–<small>m³/min</small>`; out("f-qsec").innerHTML = `–<small>m³/s</small>`; out("f-area").innerHTML = `–<small>m²</small>`;
+    out("f-steps").textContent = "덕트 지름과 덕트속도를 확인해 주세요."; out("flow-drawing").innerHTML = ""; return;
+  }
+  const A = areaOf(D), Q = V * A;
+  out("f-qmin").innerHTML = `${fmt(Q*60,2)}<small>m³/min</small>`;
+  out("f-qsec").innerHTML = `${fmt(Q,4)}<small>m³/s</small>`;
+  out("f-area").innerHTML = `${fmt(A,5)}<small>m²</small>`;
+  out("f-steps").textContent = [
+    ...(useVP ? [`V  = 4.043√VP = 4.043 × √${f(duct.fVP)} = ${f(V)} m/s`] : []),
+    `A  = π × D² / 4 = π × ${f(D/1000)}² / 4 = ${f(A)} m²`,
+    `Q  = V × A = ${f(V)} × ${f(A)} = ${f(Q)} m³/s`,
+    `Q  = ${f(Q)} × 60 = ${f(Q*60)} m³/min`
+  ].join("\n");
+  drawFlowSection(D, V);
+}
+
+/* 덕트 단면 비교: 점선 = 이론 지름, 채운 원 = 선정한 상용 규격 */
+function drawDuctSection(Dmm, stdmm, Vd, Va){
+  const cx = 110, cy = 105, big = Math.max(Dmm, stdmm || 0), s = 85 / (big / 2);
+  const r1 = Dmm / 2 * s, r2 = stdmm ? stdmm / 2 * s : 0;
+  document.getElementById("duct-drawing").innerHTML = `
+    ${stdmm ? `<circle cx="${cx}" cy="${cy}" r="${r2}" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="2"/>` : ""}
+    <circle cx="${cx}" cy="${cy}" r="${r1}" fill="none" stroke="var(--draw)" stroke-width="1.5" stroke-dasharray="5 4"/>
+    <line x1="${cx-r1}" y1="${cy}" x2="${cx+r1}" y2="${cy}" stroke="var(--muted)" stroke-dasharray="2 3"/>
+    <g font-size="12" fill="var(--ink)">
+      <line x1="228" y1="46" x2="252" y2="46" stroke="var(--draw)" stroke-width="1.5" stroke-dasharray="5 4"/>
+      <text x="260" y="50">이론 D = ${fmt(Dmm,1)} mm</text>
+      ${stdmm ? `<rect x="228" y="68" width="24" height="12" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="2"/>
+      <text x="260" y="78">상용 = ${stdmm} mm</text>
+      <text x="228" y="118" fill="var(--muted)">Vd 기준</text><text x="300" y="118">${f(Vd)} m/s</text>
+      <text x="228" y="140" fill="var(--muted)">실제 V'</text><text x="300" y="140" fill="var(--accent)" font-weight="600">${fmt(Va,2)} m/s</text>
+      <text x="228" y="172" fill="var(--muted)" font-size="11">단면이 작아진 만큼</text>
+      <text x="228" y="188" fill="var(--muted)" font-size="11">속도는 빨라집니다</text>` : ""}
+    </g>`;
+}
+
+function drawFlowSection(Dmm, V){
+  const cx = 110, cy = 105, r = 80;
+  document.getElementById("flow-drawing").innerHTML = DEFS + `
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="2"/>
+    <line x1="${cx-r}" y1="${cy}" x2="${cx+r}" y2="${cy}" stroke="var(--muted)"/>
+    <text x="${cx}" y="${cy-8}" text-anchor="middle" font-size="12" fill="var(--ink)">D = ${fmt(Dmm,0)} mm</text>
+    <circle cx="${cx}" cy="${cy+30}" r="9" fill="none" stroke="var(--airflow)" stroke-width="2"/>
+    <circle cx="${cx}" cy="${cy+30}" r="2.5" fill="var(--airflow)"/>
+    <g font-size="12" fill="var(--ink)">
+      <text x="228" y="80" fill="var(--muted)">덕트속도 V</text><text x="228" y="98" fill="var(--airflow)" font-weight="600">${fmt(V,2)} m/s</text>
+      <text x="228" y="130" fill="var(--muted)">⊙ 지면에서 나오는 방향의 흐름</text>
+    </g>`;
+}
+
+/* =========================================================
+   5) 도식
+   ========================================================= */
+const svg = () => document.getElementById("drawing");
+const DEFS = `<defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--airflow)"/></marker></defs>`;
+
+function drawBooth(v){
+  const maxW = 200, maxH = 145, s = Math.min(maxW / v.W, maxH / v.H);
+  const w = v.W * s, h = v.H * s, x0 = 175 - w/2, y0 = 48 + (maxH - h)/2, d = 34;
+  const arrows = [0.25,0.5,0.75].map(t => { const y = y0 + h*t;
+    return `<line class="flow" x1="${x0-70}" y1="${y}" x2="${x0+10}" y2="${y}" stroke="var(--airflow)" stroke-width="2" stroke-dasharray="8 4" marker-end="url(#ah)"/>`; }).join("");
+  svg().innerHTML = DEFS + `
+    <polygon points="${x0},${y0} ${x0+d},${y0-d*0.6} ${x0+w+d},${y0-d*0.6} ${x0+w},${y0}" fill="var(--accent-soft)" stroke="var(--draw)" stroke-width="1.5"/>
+    <polygon points="${x0+w},${y0} ${x0+w+d},${y0-d*0.6} ${x0+w+d},${y0+h-d*0.6} ${x0+w},${y0+h}" fill="var(--accent-soft)" stroke="var(--draw)" stroke-width="1.5"/>
+    <rect x="${x0}" y="${y0}" width="${w}" height="${h}" fill="none" stroke="var(--draw)" stroke-width="2"/>
+    <rect x="${x0+w*0.35+d*0.5}" y="${y0-d*0.6-18}" width="${w*0.3}" height="18" fill="var(--accent-soft)" stroke="var(--draw)" stroke-width="1.5"/>
+    ${arrows}
+    <line x1="${x0}" y1="${y0+h+16}" x2="${x0+w}" y2="${y0+h+16}" stroke="var(--muted)"/>
+    <line x1="${x0}" y1="${y0+h+10}" x2="${x0}" y2="${y0+h+22}" stroke="var(--muted)"/>
+    <line x1="${x0+w}" y1="${y0+h+10}" x2="${x0+w}" y2="${y0+h+22}" stroke="var(--muted)"/>
+    <text x="${x0+w/2}" y="${y0+h+36}" text-anchor="middle" font-size="13" fill="var(--ink)">W = ${lenTxt(v.W)}</text>
+    <line x1="${x0+w+d+16}" y1="${y0}" x2="${x0+w+d+16}" y2="${y0+h}" stroke="var(--muted)"/>
+    <text x="${x0+w+d+22}" y="${y0+h/2+4}" font-size="13" fill="var(--ink)">H = ${lenTxt(v.H)}</text>
+    <text x="${x0-70}" y="${y0+h*0.25-8}" font-size="12" fill="var(--airflow)">Vc = ${f(v.Vc)} m/s</text>`;
+}
+
+/* 외부식 측면도: 왼쪽 점(오염원)에서 X만큼 떨어진 개구면 */
+function drawExternal(v, o){
+  const cy = 118, s = Math.min(150 / v.X, 120 / o.face);
+  const xs = v.X * s, hf = o.face * s, px = 40, fx = px + xs, hx = fx + 80;
+  const dh = Math.max(14, Math.min(hf * 0.45, 40));
+  const fl = o.flange ? Math.max(14, Math.min(hf * 0.35, 30)) : 0;
+  const dimY = 222;
+  svg().innerHTML = DEFS + `
+    <text x="412" y="18" text-anchor="end" font-size="12" fill="var(--muted)">${o.aside}</text>
+    <polygon points="${fx},${cy-hf/2} ${hx},${cy-dh/2} ${hx},${cy+dh/2} ${fx},${cy+hf/2}" fill="var(--accent-soft)" stroke="var(--draw)" stroke-width="1.5"/>
+    <path d="M${hx},${cy-dh/2} H414 M${hx},${cy+dh/2} H414" stroke="var(--draw)" stroke-width="1.5" fill="none"/>
+    <line x1="${fx}" y1="${cy-hf/2}" x2="${fx}" y2="${cy+hf/2}" stroke="var(--draw)" stroke-width="2.5"/>
+    ${o.flange ? `<line x1="${fx}" y1="${cy-hf/2-fl}" x2="${fx}" y2="${cy+hf/2+fl}" stroke="var(--draw)" stroke-width="5" stroke-linecap="square"/>
+      <text x="${fx+8}" y="${cy-hf/2-fl+10}" font-size="11" fill="var(--muted)">플랜지</text>` : ""}
+    <text x="${fx}" y="${cy-hf/2-fl-8}" text-anchor="middle" font-size="12" fill="var(--ink)">${o.faceSym} = ${lenTxt(o.face)}</text>
+    <line class="flow" x1="${px+8}" y1="${cy}" x2="${fx-4}" y2="${cy}" stroke="var(--airflow)" stroke-width="2" stroke-dasharray="8 4" marker-end="url(#ah)"/>
+    <circle cx="${px}" cy="${cy}" r="6" fill="var(--mark)" stroke="var(--draw)"/>
+    <text x="${px-12}" y="${cy-14}" font-size="12" fill="var(--airflow)">Vc = ${f(v.Vc)} m/s</text>
+    <line x1="${px}" y1="${cy+10}" x2="${px}" y2="${dimY+6}" stroke="var(--muted)" stroke-dasharray="2 3"/>
+    <line x1="${fx}" y1="${cy+hf/2+fl+4}" x2="${fx}" y2="${dimY+6}" stroke="var(--muted)" stroke-dasharray="2 3"/>
+    <line x1="${px}" y1="${dimY}" x2="${fx}" y2="${dimY}" stroke="var(--muted)"/>
+    <text x="${(px+fx)/2}" y="${dimY-6}" text-anchor="middle" font-size="12" fill="var(--ink)">X = ${lenTxt(v.X)}</text>`;
+}
+
+/* 캐노피 입면도: 작업면 위 D 높이에 매단 후드 */
+function drawCanopy(v){
+  const s = Math.min(220 / v.L, 120 / v.D), tw = v.L * s, dpx = v.D * s;
+  const cx = 190, top = 196, hb = top - dpx, ov = 14;
+  const lx = cx - tw/2, rx = cx + tw/2;
+  const arrows = [lx+10, cx, rx-10].map(x =>
+    `<line class="flow" x1="${x}" y1="${top-4}" x2="${x}" y2="${hb+8}" stroke="var(--airflow)" stroke-width="2" stroke-dasharray="8 4" marker-end="url(#ah)"/>`).join("");
+  svg().innerHTML = DEFS + `
+    <text x="8" y="18" font-size="12" fill="var(--muted)">P = 2(L+W) = ${lenTxt(2*(v.L+v.W))}</text>
+    <polygon points="${lx-ov},${hb} ${rx+ov},${hb} ${cx+22},${hb-36} ${cx-22},${hb-36}" fill="var(--accent-soft)" stroke="var(--draw)" stroke-width="1.5"/>
+    <path d="M${cx-22},${hb-36} V0 M${cx+22},${hb-36} V0" stroke="var(--draw)" stroke-width="1.5"/>
+    ${arrows}
+    <rect x="${lx}" y="${top}" width="${tw}" height="12" fill="var(--mark)" stroke="var(--draw)"/>
+    <text x="${cx}" y="${top+30}" text-anchor="middle" font-size="12" fill="var(--ink)">작업면 L = ${lenTxt(v.L)}, W = ${lenTxt(v.W)}</text>
+    <line x1="${rx+ov+14}" y1="${hb}" x2="${rx+ov+14}" y2="${top}" stroke="var(--muted)"/>
+    <line x1="${rx+ov+8}" y1="${hb}" x2="${rx+ov+20}" y2="${hb}" stroke="var(--muted)"/>
+    <line x1="${rx+ov+8}" y1="${top}" x2="${rx+ov+20}" y2="${top}" stroke="var(--muted)"/>
+    <text x="${rx+ov+22}" y="${(hb+top)/2+4}" font-size="12" fill="var(--ink)">D = ${lenTxt(v.D)}</text>
+    <text x="${lx-ov}" y="${hb-6}" font-size="12" fill="var(--airflow)">Vc = ${f(v.Vc)} m/s</text>`;
+}
+
+/* =========================================================
+   5-2) 탭·덕트 화면 초기화
+   ========================================================= */
+function showTab(t){
+  duct.tab = t;
+  document.querySelectorAll(".tab").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === t ? "true" : "false"));
+  document.getElementById("tab-hood").hidden = t !== "hood";
+  document.getElementById("tab-duct").hidden = t !== "duct";
+  if(t === "duct") computeDuct();
+}
+function chipRow(rowId, items, getOn, onPick){
+  const row = document.getElementById(rowId);
+  row.querySelectorAll(".chip").forEach(b => b.remove());
+  items.forEach(it => {
+    const b = chip(it.t, () => { onPick(it); chipRow(rowId, items, getOn, onPick); }, "sm");
+    b.setAttribute("aria-pressed", getOn(it) ? "true" : "false");
+    row.appendChild(b);
+  });
+}
+function initDuct(){
+  document.querySelectorAll(".tab").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
+
+  const setMode = m => {
+    duct.mode = m;
+    document.getElementById("pane-size").hidden = m !== "size";
+    document.getElementById("pane-size-table").hidden = m !== "size";
+    document.getElementById("pane-flow").hidden = m !== "flow";
+    document.getElementById("row-dex").hidden = m !== "size";
+    m === "size" ? computeDuct() : renderFlow();
+  };
+  chipRow("row-dmode", [{t:"덕트 크기 결정 (Q → D)", v:"size"}, {t:"덕트 환기량 (D, V → Q)", v:"flow"}], it => duct.mode === it.v, it => setMode(it.v));
+
+  // 예제는 눌린 상태를 남기지 않음
+  const exRow = document.getElementById("row-dex");
+  DUCT_EXAMPLES.forEach(ex => exRow.appendChild(chip(ex.t, () => {
+    state[ex.hood] = { shape: ex.shape || state[ex.hood].shape, v: { ...ex.v } };
+    duct.qSrc = "hood"; duct.Vd = ex.Vd; document.getElementById("in-Vd").value = ex.Vd;
+    refreshQSrc(); select(ex.hood);
+  }, "sm")));
+
+  const refreshQSrc = () => {
+    chipRow("row-qsrc", [{t:"① 후드 계산값", v:"hood"}, {t:"직접 입력", v:"direct"}], it => duct.qSrc === it.v, it => { duct.qSrc = it.v; refreshQSrc(); computeDuct(); });
+    document.getElementById("q-linked").hidden = duct.qSrc !== "hood";
+    document.getElementById("q-direct").hidden = duct.qSrc !== "direct";
+  };
+  refreshQSrc();
+
+  const qIn = document.getElementById("in-Qd");
+  const showQ = () => { qIn.value = +(duct.qDirect * (duct.qUnit === "min" ? 60 : 1)).toPrecision(6); document.getElementById("q-unit-label").textContent = duct.qUnit === "min" ? "m³/min" : "m³/s"; };
+  chipRow("row-qunit", [{t:"m³/min", v:"min"}, {t:"m³/s", v:"sec"}], it => duct.qUnit === it.v, it => { duct.qUnit = it.v; showQ(); });
+  showQ();
+  qIn.addEventListener("input", () => { duct.qDirect = parseFloat(qIn.value) / (duct.qUnit === "min" ? 60 : 1); computeDuct(); });
+
+  const vdIn = document.getElementById("in-Vd"); vdIn.value = duct.Vd;
+  vdIn.addEventListener("input", () => { duct.Vd = parseFloat(vdIn.value); computeDuct(); });
+  const vdBox = document.getElementById("vd-presets");
+  VD_PRESETS.forEach(p => { const b = document.createElement("button"); b.type = "button"; b.className = "preset"; b.textContent = p.t;
+    b.addEventListener("click", () => { vdIn.value = p.v; duct.Vd = p.v; computeDuct(); }); vdBox.appendChild(b); });
+
+  // 덕트 환기량 모드
+  const dIn = document.getElementById("in-fD"), sel = document.getElementById("sel-fD");
+  sel.innerHTML = `<option value="">상용 규격에서 선택…</option>` + STD_DUCTS.map(s => `<option value="${s[1]}">${s[1]} mm (${s[0]}″)</option>`).join("");
+  dIn.value = duct.fD; sel.value = String(duct.fD);
+  dIn.addEventListener("input", () => { duct.fD = parseFloat(dIn.value); sel.value = STD_DUCTS.some(s => s[1] === duct.fD) ? String(duct.fD) : ""; renderFlow(); });
+  sel.addEventListener("change", () => { if(sel.value){ dIn.value = sel.value; duct.fD = +sel.value; renderFlow(); } });
+  const vIn = document.getElementById("in-fV"), vpIn = document.getElementById("in-fVP");
+  vIn.value = duct.fV; vpIn.value = duct.fVP;
+  vIn.addEventListener("input", () => { duct.fV = parseFloat(vIn.value); renderFlow(); });
+  vpIn.addEventListener("input", () => { duct.fVP = parseFloat(vpIn.value); renderFlow(); });
+  chipRow("row-vmode", [{t:"속도 V 직접", v:"V"}, {t:"속도압 VP로", v:"VP"}], it => duct.vMode === it.v, it => {
+    duct.vMode = it.v;
+    document.getElementById("f-fV").hidden = it.v !== "V"; document.getElementById("f-fVP").hidden = it.v !== "VP";
+    renderFlow();
+  });
+  renderFlow();
+  setMode("size");
+  showTab(location.hash === "#duct" ? "duct" : "hood");
+}
+
+/* =========================================================
+   6) 시작
+   ========================================================= */
+buildTopRows();
+initDuct();
+document.getElementById("reset-ex").addEventListener("click", () => {
+  const h = HOODS.find(x=>x.id===current);
+  state[h.id] = { shape: h.example.shape || (h.shapes && h.shapes[0]), v: { ...h.example.v } };
+  buildShapeRow(h); buildFields(); compute();
+});
+select("booth");
+</script>
+
+</body>
+</html>
